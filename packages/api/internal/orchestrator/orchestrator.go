@@ -115,10 +115,11 @@ func New(
 	if env.IsLocal() {
 		zap.L().Info("Skipping syncing sandboxes, running locally")
 		// Add a local node for local development, if there isn't any, it fails silently
+		orchestratorHost := env.GetEnv("ORCHESTRATOR_HOST", "127.0.0.1")
 		err := o.connectToNode(ctx, nodemanager.NomadServiceDiscovery{
 			NomadNodeShortID:    "testclient",
-			OrchestratorAddress: fmt.Sprintf("%s:%s", "127.0.0.1", consts.OrchestratorPort),
-			IPAddress:           "127.0.0.1",
+			OrchestratorAddress: fmt.Sprintf("%s:%s", orchestratorHost, consts.OrchestratorPort),
+			IPAddress:           orchestratorHost,
 		})
 		if err != nil {
 			zap.L().Error("Error connecting to local node. If you're starting the API server locally, make sure you run 'make connect-orchestrator' to connect to the node remotely before starting the local API server.", zap.Error(err))

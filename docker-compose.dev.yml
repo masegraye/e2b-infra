@@ -72,6 +72,7 @@ services:
       POSTGRES_CONNECTION_STRING: "postgresql://postgres:e2b_dev_password@postgres:5432/e2b?sslmode=disable"
       CLICKHOUSE_CONNECTION_STRING: "clickhouse://default:@clickhouse:9000/e2b"
       ORCHESTRATOR_PORT: 5008
+      ORCHESTRATOR_HOST: "orchestrator"
       ENVIRONMENT: development
       GIN_MODE: debug
       SANDBOX_ACCESS_TOKEN_HASH_SEED: "dev_seed_123"
