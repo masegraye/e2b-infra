@@ -68,6 +68,7 @@ services:
       ENVIRONMENT: development
       GIN_MODE: debug
       SANDBOX_ACCESS_TOKEN_HASH_SEED: "dev_seed_123"
+      ADMIN_TOKEN: "dev-admin-token-123"
     volumes:
       - ./packages/api:/app
       - ./packages/shared:/shared
