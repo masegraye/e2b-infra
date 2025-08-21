@@ -1,0 +1,80 @@
+FROM golang:1.24-bookworm
+
+# Install development tools and system dependencies
+RUN apt-get update && apt-get install -y \
+    make \
+    git \
+    curl \
+    sudo \
+    iptables \
+    bridge-utils \
+    iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Air for hot reloading
+RUN go install github.com/air-verse/air@latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy shared dependencies first
+COPY packages/shared /shared
+COPY packages/clickhouse /clickhouse
+
+# Copy orchestrator package
+COPY packages/orchestrator ./
+
+# Download dependencies
+RUN go mod download
+
+# Create Air config for hot reloading
+RUN cat > .air.toml << 'EOF'
+root = "."
+testdata_dir = "testdata"
+tmp_dir = "tmp"
+
+[build]
+  args_bin = []
+  bin = "./tmp/orchestrator"
+  cmd = "CGO_ENABLED=1 go build -o ./tmp/orchestrator ."
+  delay = 1000
+  exclude_dir = ["assets", "tmp", "vendor", "testdata"]
+  exclude_file = []
+  exclude_regex = ["_test.go"]
+  exclude_unchanged = false
+  follow_symlink = false
+  full_bin = ""
+  include_dir = []
+  include_ext = ["go", "tpl", "tmpl", "html"]
+  include_file = []
+  kill_delay = "0s"
+  log = "build-errors.log"
+  poll = false
+  poll_interval = 0
+  rerun = false
+  rerun_delay = 500
+  send_interrupt = false
+  stop_on_root = false
+
+[color]
+  app = ""
+  build = "yellow"
+  main = "magenta"
+  runner = "green"
+  watcher = "cyan"
+
+[log]
+  main_only = false
+  time = false
+
+[misc]
+  clean_on_exit = false
+
+[screen]
+  clear_on_rebuild = false
+  keep_scroll = true
+EOF
+
+EXPOSE 5008 5007
+
+CMD ["air", "-c", ".air.toml"]

@@ -1,0 +1,142 @@
+# Development Makefile for E2B Infrastructure
+# Provides shortcuts for common Docker Compose operations
+
+.PHONY: help
+help: ## Show this help message
+	@echo "E2B Infrastructure - Development Commands"
+	@echo "========================================"
+	@awk 'BEGIN {FS = ":.*##"}; /^[a-zA-Z_-]+:.*?##/ { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
+.PHONY: dev-setup
+dev-setup: ## Initial development environment setup
+	@echo "Setting up development environment..."
+	@cp -n .env.dev.example .env.dev || echo ".env.dev already exists"
+	@echo "✅ Created .env.dev (edit as needed)"
+	@echo "✅ Ready to run: make dev-up"
+
+.PHONY: dev-up
+dev-up: ## Start all development services
+	docker-compose -f docker-compose.dev.yml up
+
+.PHONY: dev-up-d
+dev-up-d: ## Start all development services in background
+	docker-compose -f docker-compose.dev.yml up -d
+
+.PHONY: dev-down
+dev-down: ## Stop all development services
+	docker-compose -f docker-compose.dev.yml down
+
+.PHONY: dev-restart
+dev-restart: ## Restart all development services
+	docker-compose -f docker-compose.dev.yml restart
+
+.PHONY: dev-build
+dev-build: ## Build all development services
+	docker-compose -f docker-compose.dev.yml build
+
+.PHONY: dev-clean
+dev-clean: ## Stop services and remove volumes
+	docker-compose -f docker-compose.dev.yml down -v
+	docker-compose -f docker-compose.dev.yml rm -f
+
+.PHONY: dev-logs
+dev-logs: ## Show logs from all services
+	docker-compose -f docker-compose.dev.yml logs -f
+
+.PHONY: dev-logs-%
+dev-logs-%: ## Show logs from specific service (e.g., make dev-logs-api)
+	docker-compose -f docker-compose.dev.yml logs -f $*
+
+.PHONY: dev-shell-%
+dev-shell-%: ## Open shell in specific service (e.g., make dev-shell-api)
+	docker-compose -f docker-compose.dev.yml exec $* sh
+
+.PHONY: dev-rebuild-%
+dev-rebuild-%: ## Rebuild and restart specific service (e.g., make dev-rebuild-api)
+	docker-compose -f docker-compose.dev.yml build $*
+	docker-compose -f docker-compose.dev.yml up -d $*
+
+.PHONY: dev-status
+dev-status: ## Show status of all services
+	docker-compose -f docker-compose.dev.yml ps
+
+.PHONY: dev-db
+dev-db: ## Connect to PostgreSQL database
+	docker-compose -f docker-compose.dev.yml exec postgres psql -U e2b -d e2b
+
+.PHONY: dev-clickhouse
+dev-clickhouse: ## Connect to ClickHouse
+	docker-compose -f docker-compose.dev.yml exec clickhouse clickhouse-client
+
+.PHONY: dev-redis
+dev-redis: ## Connect to Redis
+	docker-compose -f docker-compose.dev.yml exec redis redis-cli
+
+.PHONY: dev-migrate
+dev-migrate: ## Run database migrations manually
+	docker-compose -f docker-compose.dev.yml up db-migrator clickhouse-migrator
+
+.PHONY: dev-test-%
+dev-test-%: ## Run tests in specific service (e.g., make dev-test-api)
+	docker-compose -f docker-compose.dev.yml exec $* go test -v ./...
+
+.PHONY: dev-generate-%
+dev-generate-%: ## Run code generation in specific service (e.g., make dev-generate-api)
+	docker-compose -f docker-compose.dev.yml exec $* make generate
+
+# API-specific shortcuts
+.PHONY: api-run
+api-run: ## Run API service standalone (for debugging)
+	docker-compose -f docker-compose.dev.yml up postgres redis db-migrator -d
+	docker-compose -f docker-compose.dev.yml up api
+
+.PHONY: api-debug
+api-debug: ## Run API with debug output
+	docker-compose -f docker-compose.dev.yml exec api go run -race -gcflags=all="-N -l" main.go -port 3000
+
+# Orchestrator-specific shortcuts
+.PHONY: orchestrator-run
+orchestrator-run: ## Run orchestrator service standalone
+	docker-compose -f docker-compose.dev.yml up postgres redis api -d
+	docker-compose -f docker-compose.dev.yml up orchestrator
+
+# Development utilities
+.PHONY: dev-network
+dev-network: ## Show Docker network information
+	docker network ls | grep e2b
+	docker network inspect e2b-dev
+
+.PHONY: dev-volumes
+dev-volumes: ## Show Docker volumes
+	docker volume ls | grep e2b
+
+.PHONY: dev-env
+dev-env: ## Show current environment configuration
+	@echo "Current development environment:"
+	@echo "================================"
+	@grep -E "^[A-Z_]+=" .env.dev | head -20
+
+.PHONY: dev-ports
+dev-ports: ## Show port mappings for all services
+	@echo "Service Port Mappings:"
+	@echo "====================="
+	@echo "API:                   http://localhost:3000"
+	@echo "Client Proxy:          http://localhost:8080" 
+	@echo "Docker Reverse Proxy:  http://localhost:8081"
+	@echo "PostgreSQL:            localhost:5432"
+	@echo "ClickHouse HTTP:       http://localhost:8123"
+	@echo "ClickHouse TCP:        localhost:9000"
+	@echo "Redis:                 localhost:6379"
+	@echo "Orchestrator gRPC:     localhost:5008"
+	@echo "Orchestrator Proxy:    localhost:5007"
+
+.PHONY: dev-health
+dev-health: ## Check health of all services
+	@echo "Checking service health..."
+	@echo "=========================="
+	@curl -s http://localhost:3000/health || echo "❌ API not responding"
+	@curl -s http://localhost:8080/health || echo "❌ Client Proxy not responding" 
+	@curl -s http://localhost:8081/health || echo "❌ Docker Reverse Proxy not responding"
+	@docker-compose -f docker-compose.dev.yml exec -T postgres pg_isready -U e2b || echo "❌ PostgreSQL not ready"
+	@docker-compose -f docker-compose.dev.yml exec -T clickhouse clickhouse-client -q "SELECT 1" || echo "❌ ClickHouse not responding"
+	@docker-compose -f docker-compose.dev.yml exec -T redis redis-cli ping || echo "❌ Redis not responding"

@@ -1,0 +1,26 @@
+FROM golang:1.24-alpine3.20
+
+# Install development tools
+RUN apk add --no-cache \
+    make \
+    git \
+    curl
+
+# Set working directory
+WORKDIR /app
+
+# Copy shared dependencies first
+COPY packages/shared /shared
+
+# Copy db package
+COPY packages/db ./
+
+# Download dependencies
+RUN go mod download
+
+# Build the migrator
+RUN CGO_ENABLED=0 go build -o bin/migrator ./scripts/migrator.go
+
+EXPOSE 8080
+
+CMD ["./bin/migrator"]

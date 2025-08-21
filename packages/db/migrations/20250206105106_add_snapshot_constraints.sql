@@ -15,7 +15,7 @@ ALTER TABLE "public"."snapshots"
             ON UPDATE NO ACTION
             ON DELETE CASCADE;
 
-COMMIT;
+
 -- +goose StatementEnd
 
 -- +goose Down

@@ -29,7 +29,7 @@ END $$;
 ALTER TABLE "public"."snapshots"
 ALTER COLUMN "sandbox_started_at" DROP DEFAULT;
 
-COMMIT;
+
 -- +goose StatementEnd
 
 -- +goose Down

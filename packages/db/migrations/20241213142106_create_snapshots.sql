@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS "public"."snapshots" (
 );
 ALTER TABLE "public"."snapshots" ENABLE ROW LEVEL SECURITY;
 
-COMMIT;
+
 -- +goose StatementEnd
 
 -- +goose Down

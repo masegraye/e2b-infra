@@ -1,0 +1,156 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: e2b
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: e2b_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ClickHouse for analytics
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: e2b
+      CLICKHOUSE_USER: e2b
+      CLICKHOUSE_PASSWORD: e2b_dev_password
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Database migrations
+  db-migrator:
+    build:
+      context: .
+      dockerfile: ./packages/db/Dockerfile.dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_CONNECTION_STRING: "postgresql://postgres:e2b_dev_password@postgres:5432/e2b?sslmode=disable"
+    command: ["./bin/migrator"]
+
+  # API Service
+  api:
+    build:
+      context: .
+      dockerfile: ./packages/api/Dockerfile.dev
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrator:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_CONNECTION_STRING: "postgresql://postgres:e2b_dev_password@postgres:5432/e2b?sslmode=disable"
+      CLICKHOUSE_CONNECTION_STRING: "clickhouse://default:@clickhouse:9000/e2b"
+      ORCHESTRATOR_PORT: 5008
+      ENVIRONMENT: development
+      GIN_MODE: debug
+      SANDBOX_ACCESS_TOKEN_HASH_SEED: "dev_seed_123"
+    volumes:
+      - ./packages/api:/app
+      - ./packages/shared:/shared
+      - ./packages/db:/db
+      - ./packages/clickhouse:/clickhouse
+    command: ["air", "-c", ".air.toml"]
+
+  # Orchestrator Service
+  orchestrator:
+    build:
+      context: .
+      dockerfile: ./packages/orchestrator/Dockerfile.dev
+    ports:
+      - "5008:5008"
+      - "5007:5007"
+    depends_on:
+      - api
+    environment:
+      NODE_ID: "dev-orchestrator-1"
+      TEMPLATE_BUCKET_NAME: "e2b-dev-templates"
+      ENVD_TIMEOUT: "300"
+      ORCHESTRATOR_SERVICES: "orchestrator,template-manager"
+      ENVIRONMENT: development
+    volumes:
+      - ./packages/orchestrator:/app
+      - ./packages/shared:/shared
+      - ./packages/clickhouse:/clickhouse
+      - /var/run/docker.sock:/var/run/docker.sock
+    privileged: true  # Required for Firecracker/networking operations
+    command: ["air", "-c", ".air.toml"]
+
+  # Client Proxy
+  client-proxy:
+    build:
+      context: .
+      dockerfile: ./packages/client-proxy/Dockerfile.dev
+    ports:
+      - "8080:8080"
+    depends_on:
+      - orchestrator
+    environment:
+      ENVIRONMENT: development
+    volumes:
+      - ./packages/client-proxy:/app
+      - ./packages/shared:/shared
+    command: ["air", "-c", ".air.toml"]
+
+  # Docker Registry Reverse Proxy
+  docker-reverse-proxy:
+    build:
+      context: .
+      dockerfile: ./packages/docker-reverse-proxy/Dockerfile.dev
+    ports:
+      - "8081:8081"
+    environment:
+      ENVIRONMENT: development
+    volumes:
+      - ./packages/docker-reverse-proxy:/app
+      - ./packages/shared:/shared
+    command: ["air", "-c", ".air.toml"]
+
+  # ClickHouse Migrator (optional - comment out if not needed for basic dev)
+  # clickhouse-migrator:
+  #   build:
+  #     context: .
+  #     dockerfile: ./packages/clickhouse/Dockerfile.dev
+  #   depends_on:
+  #     - clickhouse
+  #   environment:
+  #     CLICKHOUSE_HOST: clickhouse
+  #     CLICKHOUSE_PORT: 9000
+  #     CLICKHOUSE_USER: e2b
+  #     CLICKHOUSE_PASSWORD: e2b_dev_password
+  #     CLICKHOUSE_DATABASE: e2b
+  #   volumes:
+  #     - ./packages/clickhouse:/app
+  #   command: ["./migrate.sh"]
+
+volumes:
+  postgres_data:
+  clickhouse_data:
+  redis_data:
+
+networks:
+  default:
+    name: e2b-dev

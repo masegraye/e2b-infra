@@ -1,0 +1,50 @@
+FROM golang:1.24-alpine3.20
+
+# Install development tools and ClickHouse client
+RUN apk add --no-cache \
+    make \
+    git \
+    curl \
+    wget
+
+# Install ClickHouse client
+RUN wget -O - https://clickhouse.com/ | sh && \
+    mv clickhouse /usr/local/bin/clickhouse-client && \
+    chmod +x /usr/local/bin/clickhouse-client
+
+# Install Goose for migrations
+RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy clickhouse package
+COPY packages/clickhouse ./
+
+# Create migration script
+RUN cat > migrate.sh << 'EOF'
+#!/bin/sh
+echo "Starting ClickHouse migrations..."
+
+# Wait for ClickHouse to be ready
+echo "Waiting for ClickHouse to be ready..."
+until clickhouse-client --host=${CLICKHOUSE_HOST:-clickhouse} --port=${CLICKHOUSE_PORT:-9000} --user=${CLICKHOUSE_USER:-e2b} --password=${CLICKHOUSE_PASSWORD:-e2b_dev_password} --query "SELECT 1" > /dev/null 2>&1; do
+  echo "ClickHouse is unavailable - sleeping"
+  sleep 2
+done
+
+echo "ClickHouse is ready - executing migrations"
+
+# Apply migrations using Goose
+export GOOSE_DRIVER=clickhouse
+export GOOSE_DBSTRING="clickhouse://${CLICKHOUSE_USER:-e2b}:${CLICKHOUSE_PASSWORD:-e2b_dev_password}@${CLICKHOUSE_HOST:-clickhouse}:${CLICKHOUSE_PORT:-9000}/${CLICKHOUSE_DATABASE:-e2b}"
+
+cd migrations
+goose up
+
+echo "ClickHouse migrations completed"
+EOF
+
+RUN chmod +x migrate.sh
+
+CMD ["./migrate.sh"]

@@ -13,7 +13,6 @@ ALTER TABLE "public"."users_teams"
             ON UPDATE NO ACTION
             ON DELETE SET NULL;
 
-COMMIT;
 -- +goose StatementEnd
 
 -- +goose Down
