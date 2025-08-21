@@ -41,7 +41,21 @@ docker compose -f docker-compose.dev.yml exec postgres psql -U postgres -d e2b -
 
 Copy the returned API key (format: `e2b_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`).
 
-### 3. Build and Use the CLI
+### 3. Configure Environment Variables
+
+Create a `.env.local` file in the e2b-E2B root directory:
+
+```bash
+cd /path/to/e2b-E2B
+cat > .env.local << EOF
+# Local Development Environment Variables for E2B
+E2B_DEBUG=true
+E2B_API_KEY=your_api_key_from_step_2_here
+E2B_ADMIN_TOKEN=dev-admin-token-123
+EOF
+```
+
+### 4. Build and Use the CLI
 
 ```bash
 # Navigate to the CLI package
@@ -53,21 +67,36 @@ pnpm install
 # Build the CLI
 pnpm build
 
-# Use the CLI with your local infrastructure
-E2B_DEBUG=true E2B_API_KEY=your_api_key_here node dist/index.js <command>
+# Go back to the e2b-E2B root and use the convenient wrapper script
+cd ..
+./e2b-local sandbox list
 ```
 
 ## CLI Usage Examples
 
+Using the convenient wrapper script (recommended):
+
 ```bash
+# From the e2b-E2B root directory
+
 # List sandboxes
-E2B_DEBUG=true E2B_API_KEY=e2b_xxx node dist/index.js sandbox list
+./e2b-local sandbox list
 
 # Get CLI help
-E2B_DEBUG=true E2B_API_KEY=e2b_xxx node dist/index.js --help
+./e2b-local --help
 
 # List sandbox commands
-E2B_DEBUG=true E2B_API_KEY=e2b_xxx node dist/index.js sandbox --help
+./e2b-local sandbox --help
+
+# List templates (when available)
+./e2b-local template list
+```
+
+Alternatively, using environment variables directly:
+
+```bash
+# From packages/cli directory
+E2B_DEBUG=true E2B_API_KEY=e2b_xxx node dist/index.js sandbox list
 ```
 
 ## Admin API Usage
@@ -185,12 +214,21 @@ The local development setup includes:
 
 1. Start the infrastructure: `docker compose -f docker-compose.dev.yml up`
 2. Create development credentials (one time)
-3. Make changes to source code (hot reloading active)
-4. Test with CLI: `E2B_DEBUG=true E2B_API_KEY=xxx node dist/index.js ...`
-5. Access services:
+3. Configure `.env.local` file with your API key
+4. Make changes to source code (hot reloading active)
+5. Test with CLI: `./e2b-local <command>`
+6. Access services:
    - API: http://localhost:3000
    - Client Proxy: http://localhost:8080  
    - Docker Registry Proxy: http://localhost:8081
+
+## Project Files
+
+After setup, your e2b-E2B directory will contain:
+
+- `.env.local` - Your development environment variables (git-ignored)
+- `e2b-local` - Convenient CLI wrapper script (git-ignored)
+- Standard e2b project files...
 
 ## Differences from Production
 

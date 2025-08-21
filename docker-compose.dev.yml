@@ -37,6 +37,13 @@ services:
     volumes:
       - redis_data:/data
 
+  # Consul for service discovery
+  consul:
+    image: consul:1.15
+    ports:
+      - "8500:8500"
+    command: ["consul", "agent", "-dev", "-client", "0.0.0.0"]
+
   # Database migrations
   db-migrator:
     build:
@@ -86,17 +93,26 @@ services:
       - "5007:5007"
     depends_on:
       - api
+      - consul
     environment:
       NODE_ID: "dev-orchestrator-1"
       TEMPLATE_BUCKET_NAME: "e2b-dev-templates"
-      ENVD_TIMEOUT: "300"
+      ENVD_TIMEOUT: "300s"
       ORCHESTRATOR_SERVICES: "orchestrator,template-manager"
+      ORCHESTRATOR_PORT: "5008"
       ENVIRONMENT: development
+      CONSUL_TOKEN: "dev-consul-token"
+      CONSUL_HTTP_ADDR: "consul:8500"
+      ALLOW_SANDBOX_INTERNET: "true"
+      STORAGE_PROVIDER: "Local"
+      LOCAL_TEMPLATE_STORAGE_BASE_PATH: "/tmp/templates"
+      ARTIFACTS_REGISTRY_PROVIDER: "Local"
     volumes:
       - ./packages/orchestrator:/app
       - ./packages/shared:/shared
       - ./packages/clickhouse:/clickhouse
       - /var/run/docker.sock:/var/run/docker.sock
+      - orchestrator_build_cache:/orchestrator/build
     privileged: true  # Required for Firecracker/networking operations
     command: ["air", "-c", ".air.toml"]
 
@@ -151,6 +167,7 @@ volumes:
   postgres_data:
   clickhouse_data:
   redis_data:
+  orchestrator_build_cache:
 
 networks:
   default:
