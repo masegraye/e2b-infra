@@ -1,10 +1,12 @@
 FROM golang:1.24-alpine3.20
 
-# Install development tools
+# Install development tools including gcc for CGO
 RUN apk add --no-cache \
     make \
     git \
-    curl
+    curl \
+    gcc \
+    musl-dev
 
 # Install Air for hot reloading
 RUN go install github.com/air-verse/air@latest
