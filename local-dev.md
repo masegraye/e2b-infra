@@ -23,6 +23,130 @@ For custom hostname:
 DOCKER_HOSTNAME=registry.mylocal.dev ./local-dev/setup-local-dev.sh
 ```
 
+## Template Building Setup
+
+To successfully build templates in the local environment, follow these additional steps after the initial setup:
+
+### 1. Create Template Database Entries
+
+Templates must exist in the database before they can be built. For each template you want to build:
+
+```bash
+# Get team and user IDs
+docker compose -f docker-compose.dev.yml exec -T postgres psql -U postgres -d e2b -c "SELECT t.id as team_id, u.id as user_id FROM teams t JOIN users_teams ut ON t.id = ut.team_id JOIN auth.users u ON u.id = ut.user_id LIMIT 1;"
+
+# Create template entry (replace TEMPLATE_ID, TEAM_ID, USER_ID with actual values)
+docker compose -f docker-compose.dev.yml exec -T postgres psql -U postgres -d e2b -c "INSERT INTO envs (id, team_id, created_by, updated_at) VALUES ('TEMPLATE_ID', 'TEAM_ID', 'USER_ID', CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING;"
+```
+
+**Important**: Use the exact `template_id` from your `e2b.toml` file, not the `template_name`.
+
+### 2. Template Build Process
+
+With the database entry created, you can now build templates:
+
+```bash
+cd /path/to/your/template/directory
+E2B_DEBUG=true E2B_API_KEY=your_api_key E2B_ACCESS_TOKEN=your_access_token ../../e2b-local template build
+```
+
+The build process will:
+1. ✅ Create/update template in database
+2. ✅ Login to local Docker registry (`docker.localhost`)  
+3. ✅ Build Docker image with template Dockerfile
+4. ✅ Push image to local registry via docker-reverse-proxy
+5. ✅ Trigger orchestrator build process
+6. ⚠️ Build Firecracker VM (may fail due to envd dependencies)
+
+### 3. Common Issues and Solutions
+
+**404 Template Not Found**: 
+- Ensure template exists in database with exact ID from `e2b.toml`
+- Check `template_id` in your config file matches database entry
+
+**409 Alias Conflict**:
+- Clean up old test templates: `DELETE FROM envs WHERE id = 'old_template_id';`
+
+**Docker Push Errors**:
+- Verify docker-reverse-proxy logs show "Development mode: proxying to local registry"
+- Check nginx proxy is running: `docker compose logs docker-registry-proxy`
+- Ensure certificates exist in `local-dev/certs/`
+
+**Build Failure (`/fc-envd/envd: no such file or directory`)**:
+- This is expected in local development - the Firecracker environment daemon is not available
+- The Docker registry and template creation parts are working correctly
+
+### 4. Template Management APIs
+
+The API provides endpoints for template management:
+
+**Create New Template** (POST `/templates`):
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"dockerfile": "FROM ubuntu:latest", "alias": "my-template"}' \
+     http://localhost:3000/templates
+```
+
+**Rebuild Existing Template** (POST `/templates/{templateID}`):
+```bash  
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"dockerfile": "FROM ubuntu:latest"}' \
+     http://localhost:3000/templates/your-template-id
+```
+
+**Trigger Build** (POST `/templates/{templateID}/builds/{buildID}`):
+```bash
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+     -X POST \
+     http://localhost:3000/templates/your-template-id/builds/your-build-id
+```
+
+These APIs handle the database operations automatically, including:
+- Creating/updating entries in the `envs` table
+- Managing build records in `env_builds` table  
+- Handling template aliases in `env_aliases` table
+
+## What Was Fixed for Template Building
+
+The template building functionality required several components to work together:
+
+### 1. Docker Registry Authentication Chain
+- **nginx proxy** (`docker-registry-proxy`) terminates HTTPS and forwards to docker-reverse-proxy
+- **docker-reverse-proxy** handles authentication via access tokens and proxies to local registry
+- **local-registry** (Docker Registry v2) stores the actual container images
+
+### 2. Environment Variable Configuration
+The docker-reverse-proxy now supports full configuration via environment variables:
+- `LOCAL_REGISTRY_URL` - URL of local registry backend
+- `EXTERNAL_REGISTRY_DOMAIN` - External domain for client access
+- `LOCAL_REGISTRY_HOST` - Internal host for Location header rewriting
+- `E2B_REGISTRY_NAMESPACE` - Registry namespace (e2b/custom-envs)
+
+### 3. Development Mode Detection
+When `ENVIRONMENT=development`, the proxy automatically:
+- Returns dummy tokens instead of calling GCP APIs
+- Proxies to local registry instead of GCP registry  
+- Skips URL rewriting for namespace conversion
+- Removes authorization headers when forwarding to local registry
+- Rewrites Location headers from internal to external domains
+
+### 4. Database Prerequisites
+Templates must exist in the `envs` table before building:
+- Template ID must match exactly between `e2b.toml` and database
+- Templates require `team_id`, `created_by`, and `updated_at` fields
+- The API will handle creating build records and aliases automatically
+
+### 5. Build Flow (Now Working)
+1. ✅ CLI reads template config (`e2b.toml`)
+2. ✅ API validates template exists in database  
+3. ✅ CLI logs into Docker registry (`docker login docker.localhost`)
+4. ✅ CLI builds Docker image with template
+5. ✅ CLI pushes image through nginx → docker-reverse-proxy → local-registry
+6. ✅ API triggers orchestrator build process
+7. ⚠️ Orchestrator attempts Firecracker build (expected to fail in local dev)
+
 ## Prerequisites
 
 - **Docker** and **Docker Compose**
