@@ -73,6 +73,7 @@ services:
       CLICKHOUSE_CONNECTION_STRING: "clickhouse://default:@clickhouse:9000/e2b"
       ORCHESTRATOR_PORT: 5008
       ORCHESTRATOR_HOST: "orchestrator"
+      TEMPLATE_MANAGER_HOST: "orchestrator:5008"
       ENVIRONMENT: development
       GIN_MODE: debug
       SANDBOX_ACCESS_TOKEN_HASH_SEED: "dev_seed_123"
