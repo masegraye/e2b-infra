@@ -632,3 +632,100 @@ After setup, your e2b-E2B directory will contain:
 - **Relaxed security** - Suitable for development only
 
 This local setup provides a complete E2B development environment without requiring cloud resources or complex deployment procedures.
+
+## Firecracker and Sandbox VM Support on macOS
+
+### Current Limitation
+
+**Firecracker cannot run natively on macOS** because it requires the Linux-specific KVM (Kernel-based Virtual Machine) API. This affects the following E2B functionality:
+
+- **Template building with VM execution** - Templates can be built and pushed to the registry, but cannot execute in Firecracker VMs
+- **Sandbox creation and execution** - Sandboxes cannot run actual workloads since they need Firecracker VMs
+- **envd daemon** - The environment daemon (`/fc-envd/envd`) manages Firecracker VMs and will fail on macOS
+
+### What Works on macOS
+
+✅ **Template building and Docker operations**:
+- Building template Docker images works completely
+- Pushing/pulling templates to/from the local Docker registry works
+- Template metadata and storage operations work
+- All API operations for templates work
+
+✅ **Full development workflow**:
+- API development and testing
+- Database operations and migrations  
+- Authentication and authorization systems
+- Docker registry and proxy functionality
+- Hot reloading and debugging
+
+### What Doesn't Work on macOS
+
+❌ **Firecracker-dependent operations**:
+- Creating and starting sandboxes (fails at VM creation)
+- Running code inside sandbox environments
+- Template building steps that require VM execution
+- Any operations that need the envd daemon
+
+### Error Symptoms
+
+When template building fails with Firecracker-related errors, you'll see:
+```
+/fc-envd/envd: no such file or directory
+```
+
+This occurs because the orchestrator expects Firecracker and envd to be available in the Linux environment.
+
+### Solutions for Full Functionality
+
+#### Option 1: Linux Development VM (Recommended)
+
+Run the entire E2B stack inside a Linux virtual machine:
+
+1. **Install a VM solution**: UTM, Parallels Desktop, or VirtualBox
+2. **Create a Linux VM** (Ubuntu 22.04+ recommended)
+3. **Enable nested virtualization** in your VM settings (required for KVM)
+4. **Install Docker** inside the Linux VM
+5. **Clone and run** the E2B development setup inside the VM
+6. **Forward ports** from the VM to your macOS host for access
+
+#### Option 2: Docker Desktop with KVM (Limited)
+
+Some users have reported limited success enabling KVM in Docker Desktop:
+
+1. Ensure Docker Desktop is using a Linux backend (not macOS native containers)
+2. Try mounting `/dev/kvm` (may not be available)
+3. This approach has mixed results and is not officially supported
+
+#### Option 3: Development Without VMs
+
+For pure API/frontend development, you can:
+
+1. Use the current setup for all API development
+2. Test template building up to the Docker push stage  
+3. Mock or skip Firecracker-dependent operations
+4. Use a remote Linux environment for VM testing when needed
+
+### Current Setup Status
+
+The current local development environment includes:
+
+- ✅ **envd binary built**: Located at `packages/envd/bin/debug/envd`
+- ✅ **All Docker and registry operations working**
+- ❌ **KVM/Firecracker support**: Not available on macOS
+
+### Building envd Binary
+
+If you need to rebuild the envd binary:
+
+```bash
+cd packages/envd
+make build-debug
+```
+
+The binary will be created at `packages/envd/bin/debug/envd`.
+
+### Production Deployment
+
+Note that this limitation only affects local macOS development. Production E2B runs on Linux servers with full KVM support where Firecracker works correctly.
+
+For most E2B development work (API development, template management, authentication, etc.), the current macOS setup provides a complete environment. Only sandbox execution and VM-dependent template building requires a Linux environment.
