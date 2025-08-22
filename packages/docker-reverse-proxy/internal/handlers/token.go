@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -19,8 +20,17 @@ type DockerToken struct {
 	ExpiresIn int    `json:"expires_in"`
 }
 
-// The scope is in format "repository:<project>/<repo>/<templateID>:<action>"
-var scopeRegex = regexp.MustCompile(`^repository:e2b/custom-envs/(?P<templateID>[^:]+):(?P<action>[^:]+)$`)
+// getScopeRegex returns a regex pattern for the configurable repository namespace
+func getScopeRegex() *regexp.Regexp {
+	repoNamespace := os.Getenv("E2B_REGISTRY_NAMESPACE")
+	if repoNamespace == "" {
+		repoNamespace = "e2b/custom-envs"
+	}
+	// Escape special regex characters in the namespace
+	escapedNamespace := regexp.QuoteMeta(repoNamespace)
+	pattern := fmt.Sprintf(`^repository:%s/(?P<templateID>[^:]+):(?P<action>[^:]+)$`, escapedNamespace)
+	return regexp.MustCompile(pattern)
+}
 
 // GetToken validates if user has access to template and then returns a new token for the required scope
 func (a *APIStore) GetToken(w http.ResponseWriter, r *http.Request) error {
@@ -59,6 +69,7 @@ func (a *APIStore) GetToken(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
+	scopeRegex := getScopeRegex()
 	scopeRegexMatches := scopeRegex.FindStringSubmatch(scope)
 	if len(scopeRegexMatches) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
@@ -108,6 +119,15 @@ func (a *APIStore) GetToken(w http.ResponseWriter, r *http.Request) error {
 
 // getToken gets a new token from the actual registry for the required scope
 func getToken(templateID string) (*DockerToken, error) {
+	// For local development, return a dummy token to avoid GCP requests
+	if os.Getenv("ENVIRONMENT") == "development" {
+		log.Printf("Development mode: returning dummy Docker token for template %s", templateID)
+		return &DockerToken{
+			Token:     "dummy-development-token",
+			ExpiresIn: 3600,
+		}, nil
+	}
+
 	scope := fmt.Sprintf(
 		"?service=%s-docker.pkg.dev&scope=repository:%s/%s/%s:push,pull",
 		consts.GCPRegion,

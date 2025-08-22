@@ -134,19 +134,58 @@ services:
       - ./packages/shared:/shared
     command: ["air", "-c", ".air.toml"]
 
+  # Local Docker Registry (for development)
+  local-registry:
+    image: registry:2
+    restart: always
+    ports:
+      - "5001:5000"  # Temporarily expose for direct testing
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - registry_data:/var/lib/registry
+
   # Docker Registry Reverse Proxy
   docker-reverse-proxy:
     build:
       context: .
       dockerfile: ./packages/docker-reverse-proxy/Dockerfile.dev
-    ports:
-      - "8081:8081"
     environment:
       ENVIRONMENT: development
+      GCP_PROJECT_ID: e2b-dev-local
+      DOMAIN_NAME: localhost
+      GCP_DOCKER_REPOSITORY_NAME: e2b-dev
+      GOOGLE_SERVICE_ACCOUNT_BASE64: eyJ0ZXN0IjoidmFsdWUifQ==  # dummy base64 for local dev
+      GCP_REGION: us-central1
+      POSTGRES_CONNECTION_STRING: "postgresql://postgres:e2b_dev_password@postgres:5432/e2b?sslmode=disable"
+      # Local registry configuration
+      LOCAL_REGISTRY_URL: "http://local-registry:5000"
+      EXTERNAL_REGISTRY_DOMAIN: "${DOCKER_HOSTNAME:-docker.localhost}"
+      LOCAL_REGISTRY_HOST: "local-registry:5000"
+      E2B_REGISTRY_NAMESPACE: "e2b/custom-envs"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      local-registry:
+        condition: service_started
     volumes:
       - ./packages/docker-reverse-proxy:/app
       - ./packages/shared:/shared
     command: ["air", "-c", ".air.toml"]
+
+  # Nginx HTTPS proxy for Docker registry
+  docker-registry-proxy:
+    image: nginx:alpine
+    ports:
+      - "80:80"    # HTTP for docker registry
+      - "443:443"  # HTTPS for docker registry  
+    environment:
+      DOCKER_HOSTNAME: "${DOCKER_HOSTNAME:-docker.localhost}"
+    volumes:
+      - ./local-dev/docker-registry-nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./local-dev/certs:/etc/nginx/certs:ro
+    depends_on:
+      - docker-reverse-proxy
 
   # ClickHouse Migrator (optional - comment out if not needed for basic dev)
   # clickhouse-migrator:
@@ -170,6 +209,7 @@ volumes:
   clickhouse_data:
   redis_data:
   orchestrator_build_cache:
+  registry_data:
 
 networks:
   default:
