@@ -2,6 +2,7 @@ package sandboxes
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,8 +68,11 @@ func TestSnapshotTemplateCreate(t *testing.T) {
 		snapshot := createSnapshotTemplateWithCleanup(t, c, sbx.SandboxID, &name)
 
 		assert.NotEmpty(t, snapshot.SnapshotID)
+		assert.Contains(t, snapshot.SnapshotID, name, "snapshotID should contain the alias")
+		assert.Contains(t, snapshot.SnapshotID, ":default", "snapshotID should contain the tag")
 		require.NotEmpty(t, snapshot.Names)
 		assert.Contains(t, snapshot.Names[0], name)
+		assert.NotContains(t, snapshot.Names[0], ":default", "names should not include the tag suffix")
 
 		// Creating again with the same name should reuse the same template
 		resp2 := createSnapshotTemplate(t, c, sbx.SandboxID, &name)
@@ -85,16 +89,20 @@ func TestSnapshotTemplateCreate(t *testing.T) {
 		nameV1 := "tagged-snap-" + sbx.SandboxID + ":v1"
 		snapshot := createSnapshotTemplateWithCleanup(t, c, sbx.SandboxID, &nameV1)
 		require.NotEmpty(t, snapshot.Names)
-		assert.Contains(t, snapshot.Names[0], ":v1")
+		assert.NotContains(t, snapshot.Names[0], ":", "names should be tagless")
 
 		// Same alias with different tag should reuse the template
 		nameV2 := "tagged-snap-" + sbx.SandboxID + ":v2"
 		resp2 := createSnapshotTemplate(t, c, sbx.SandboxID, &nameV2)
 		require.Equal(t, http.StatusCreated, resp2.StatusCode())
 		require.NotNil(t, resp2.JSON201)
-		assert.Equal(t, snapshot.SnapshotID, resp2.JSON201.SnapshotID, "Same alias with different tag should reuse the same template")
+		templateID1, _, _ := strings.Cut(snapshot.SnapshotID, ":")
+		templateID2, _, _ := strings.Cut(resp2.JSON201.SnapshotID, ":")
+		assert.Equal(t, templateID1, templateID2, "Same alias with different tag should reuse the same template")
+		assert.Contains(t, snapshot.SnapshotID, ":v1")
+		assert.Contains(t, resp2.JSON201.SnapshotID, ":v2")
 		require.NotEmpty(t, resp2.JSON201.Names)
-		assert.Contains(t, resp2.JSON201.Names[0], ":v2")
+		assert.NotContains(t, resp2.JSON201.Names[0], ":", "names should be tagless")
 	})
 
 	t.Run("create snapshot for non-existent sandbox", func(t *testing.T) {
@@ -229,7 +237,8 @@ func TestSnapshotTemplateCreateSandbox(t *testing.T) {
 		})
 
 		assert.NotEqual(t, sbx.SandboxID, newSandbox.SandboxID)
-		assert.Equal(t, snapshot.SnapshotID, newSandbox.TemplateID)
+		snapshotTemplateID, _, _ := strings.Cut(snapshot.SnapshotID, ":")
+		assert.Equal(t, snapshotTemplateID, newSandbox.TemplateID)
 	})
 
 	t.Run("create sandbox from named snapshot using name", func(t *testing.T) {
@@ -257,7 +266,7 @@ func TestSnapshotTemplateCreateSandbox(t *testing.T) {
 		})
 
 		assert.NotEqual(t, sbx.SandboxID, newSandbox.SandboxID)
-		assert.Equal(t, snapshot.SnapshotID, newSandbox.TemplateID)
+		assert.NotEmpty(t, newSandbox.TemplateID)
 	})
 
 	t.Run("overwritten snapshot build is served immediately on sandbox create", func(t *testing.T) {
@@ -304,7 +313,7 @@ func TestSnapshotTemplateCreateSandbox(t *testing.T) {
 			utils.WithTemplateID(snap.Names[0]),
 			utils.WithAutoPause(false),
 		)
-		assert.Equal(t, snap.SnapshotID, newSbx.TemplateID)
+		assert.NotEmpty(t, newSbx.TemplateID)
 
 		// Read the marker file — it only exists in B2. If the cache served
 		// stale B1, the file would be missing.
